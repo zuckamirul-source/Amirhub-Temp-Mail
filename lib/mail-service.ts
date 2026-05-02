@@ -15,35 +15,52 @@ export interface TempEmailContent extends TempEmailMessage {
 const PROXY_URL = '/api/mail';
 
 export async function fetchFromProxy(path: string, options: RequestInit = {}) {
-  // Use relative path in browser, absolute in SSR
+  // Always use a relative URL in the browser
   let fetchUrl: string;
+  
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams();
     params.set('path', path);
     fetchUrl = `${PROXY_URL}?${params.toString()}`;
   } else {
-    const url = new URL(PROXY_URL, 'http://localhost:3000');
-    url.searchParams.set('path', path);
-    fetchUrl = url.toString();
+    // During build/SSR, we need a full URL. 
+    // In AI Studio, we can try to use a placeholder or handle it gracefully.
+    console.warn(`Server-side fetch to ${path} skipped or potentially misconfigured.`);
+    return null; 
   }
   
-  const response = await fetch(fetchUrl, {
-    ...options,
-    headers: {
-      ...options.headers,
+  try {
+    const response = await fetch(fetchUrl, {
+      ...options,
+      headers: {
+        ...options.headers,
+      }
+    });
+
+    if (!response.ok) {
+      let errorMessage = `Request failed with status ${response.status}`;
+      try {
+        const err = await response.json();
+        if (err.error) errorMessage = err.error;
+        if (err.details) errorMessage += `: ${err.details}`;
+      } catch (e) {
+        // Not a JSON error
+      }
+      throw new Error(errorMessage);
     }
-  });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error || `Request failed with status ${response.status}`);
+    return response.json();
+  } catch (error: any) {
+    if (typeof window !== 'undefined') {
+      console.error(`Proxy fetch error for ${path}:`, error.message);
+    }
+    throw error;
   }
-
-  return response.json();
 }
 
 export async function getTopDomain(): Promise<string> {
   const data = await fetchFromProxy('/domains');
+  if (!data) return 'mail.tm';
   const domains = data['hydra:member'] || data;
   return domains[0]?.domain || 'mail.tm';
 }
@@ -60,6 +77,7 @@ export async function getToken(address: string, password: string): Promise<strin
     method: 'POST',
     body: JSON.stringify({ address, password }),
   });
+  if (!data) return '';
   return data.token;
 }
 
@@ -70,6 +88,7 @@ export async function getMessages(token: string): Promise<TempEmailMessage[]> {
     }
   });
   
+  if (!data) return [];
   const members = data['hydra:member'] || data || [];
   if (!Array.isArray(members)) return [];
 

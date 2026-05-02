@@ -22,7 +22,11 @@ async function handleRequest(request: NextRequest) {
   const url = new URL(request.url);
   const path = url.searchParams.get('path') || '';
   
-  const targetUrl = new URL(path, DOMAIN);
+  if (!path) {
+    return NextResponse.json({ error: 'Missing path parameter' }, { status: 400 });
+  }
+
+  const targetUrl = new URL(path.startsWith('/') ? path.slice(1) : path, DOMAIN);
   
   // Forward other search params (except 'path')
   url.searchParams.forEach((value, key) => {
@@ -50,12 +54,14 @@ async function handleRequest(request: NextRequest) {
     method: request.method,
     headers,
     signal: AbortSignal.timeout(30000),
-    // Ensure no caching on the fetch itself for mail updates
     cache: 'no-store'
   };
 
-  if (request.method === 'POST') {
-    options.body = await request.text();
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    const bodyText = await request.text();
+    if (bodyText) {
+      options.body = bodyText;
+    }
   }
 
   try {
@@ -88,7 +94,8 @@ async function handleRequest(request: NextRequest) {
 
     return NextResponse.json(data);
   } catch (error: any) {
-    console.error('Mail Proxy Exception for', targetUrl.toString(), ':', error.message);
+    const errorDetails = error.message || 'Unknown error';
+    console.error('Mail Proxy Exception for', targetUrl.toString(), ':', errorDetails);
     
     // Detect timeout
     if (error.name === 'AbortError' || error.name === 'TimeoutError') {
@@ -99,7 +106,12 @@ async function handleRequest(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: 'Failed to connect to email provider.', details: error.message },
+      { 
+        error: 'Failed to connect to email provider.', 
+        details: errorDetails,
+        path: path,
+        target: targetUrl.toString()
+      },
       { status: 500 }
     );
   }

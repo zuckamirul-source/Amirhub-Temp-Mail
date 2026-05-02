@@ -1,7 +1,5 @@
 'use client';
 
-import { Suspense } from 'react';
-
 import { useTempMail } from '@/hooks/use-temp-mail';
 import { 
   Plus, 
