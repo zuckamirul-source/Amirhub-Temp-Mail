@@ -69,27 +69,31 @@ async function handleRequest(request: NextRequest) {
     
     // Check if it's a JSON response before parsing
     const contentType = response.headers.get('content-type');
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        errorData = await response.text();
+      }
+      
+      console.error(`Mail provider returned error ${response.status} for ${targetUrl.toString()}:`, errorData);
+      
+      return NextResponse.json(
+        { error: `Provider error (${response.status})`, details: errorData },
+        { status: response.status }
+      );
+    }
+
     let data;
     if (contentType && contentType.includes('application/json')) {
       data = await response.json();
     } else {
       const text = await response.text();
-      // If we expected JSON but got something else, it's likely an error page from the provider
-      if (!response.ok) {
-        return NextResponse.json(
-          { error: `Provider error (${response.status})`, details: text.substring(0, 500) },
-          { status: response.status }
-        );
-      }
-      // If it's 200 but not JSON, just return as text if possible, but mail.tm is JSON API
+      // If we expected JSON but got something else, it might be a partial success or weird response
+      console.warn(`Mail provider returned non-JSON response for ${targetUrl.toString()} (Content-Type: ${contentType})`);
       return NextResponse.json({ data: text });
-    }
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `Mail service error: ${response.status}`, details: data },
-        { status: response.status }
-      );
     }
 
     return NextResponse.json(data);

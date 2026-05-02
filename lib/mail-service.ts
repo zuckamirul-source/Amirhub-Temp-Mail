@@ -49,7 +49,11 @@ export async function fetchFromProxy(path: string, options: RequestInit = {}) {
       throw new Error(errorMessage);
     }
 
-    return response.json();
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return response.json();
+    }
+    return response.text();
   } catch (error: any) {
     if (typeof window !== 'undefined') {
       console.error(`Proxy fetch error for ${path}:`, error.message);
